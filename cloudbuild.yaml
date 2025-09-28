@@ -1,0 +1,365 @@
+# Google Cloud Build Configuration
+# Complete CI/CD pipeline for the gamified donation platform
+
+steps:
+  # Step 1: Build and test all microservices
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-donation-service'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/donation-service:latest'
+      - './services/donation-service'
+    waitFor: ['-']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-points-service'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/points-service:latest'
+      - './services/points-service'
+    waitFor: ['-']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-donor-agent'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/donor-engagement-agent:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/donor-engagement-agent:latest'
+      - './agents/donor-engagement'
+    waitFor: ['-']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-charity-agent'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/charity-optimization-agent:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/charity-optimization-agent:latest'
+      - './agents/charity-optimization'
+    waitFor: ['-']
+
+  # Step 2: Run tests for each service
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'test-donation-service'
+    args:
+      - 'run'
+      - '--rm'
+      - 'gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA'
+      - 'python'
+      - '-m'
+      - 'pytest'
+      - 'tests/'
+      - '-v'
+      - '--cov=.'
+      - '--cov-report=xml'
+    waitFor: ['build-donation-service']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'test-points-service'
+    args:
+      - 'run'
+      - '--rm'
+      - 'gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA'
+      - 'python'
+      - '-m'
+      - 'pytest'
+      - 'tests/'
+      - '-v'
+    waitFor: ['build-points-service']
+
+  # Step 3: Security scanning
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'security-scan-donation'
+    args:
+      - 'container'
+      - 'images'
+      - 'scan'
+      - 'gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA'
+      - '--format=json'
+    waitFor: ['build-donation-service']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'security-scan-points'
+    args:
+      - 'container'
+      - 'images'
+      - 'scan'
+      - 'gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA'
+      - '--format=json'
+    waitFor: ['build-points-service']
+
+  # Step 4: Push images to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-donation-service'
+    args: ['push', 'gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA']
+    waitFor: ['test-donation-service', 'security-scan-donation']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-points-service'
+    args: ['push', 'gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA']
+    waitFor: ['test-points-service', 'security-scan-points']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-donor-agent'
+    args: ['push', 'gcr.io/$PROJECT_ID/donor-engagement-agent:$COMMIT_SHA']
+    waitFor: ['build-donor-agent']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-charity-agent'
+    args: ['push', 'gcr.io/$PROJECT_ID/charity-optimization-agent:$COMMIT_SHA']
+    waitFor: ['build-charity-agent']
+
+  # Step 5: Deploy to Cloud Run (Development Environment)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-donation-service'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'donation-service'
+      - '--image=gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--max-instances=100'
+      - '--min-instances=1'
+      - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,ENVIRONMENT=${_ENVIRONMENT}'
+      - '--service-account=cloud-run-service@$PROJECT_ID.iam.gserviceaccount.com'
+    waitFor: ['push-donation-service']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-points-service'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'points-service'
+      - '--image=gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--max-instances=50'
+      - '--min-instances=1'
+      - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID'
+      - '--service-account=cloud-run-service@$PROJECT_ID.iam.gserviceaccount.com'
+    waitFor: ['push-points-service']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-donor-agent'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'donor-engagement-agent'
+      - '--image=gcr.io/$PROJECT_ID/donor-engagement-agent:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--max-instances=50'
+      - '--min-instances=1'
+      - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID,A2A_PROTOCOL_VERSION=0.3.0'
+      - '--service-account=a2a-agents-service@$PROJECT_ID.iam.gserviceaccount.com'
+    waitFor: ['push-donor-agent']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-charity-agent'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'charity-optimization-agent'
+      - '--image=gcr.io/$PROJECT_ID/charity-optimization-agent:$COMMIT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--max-instances=50'
+      - '--min-instances=1'
+      - '--set-env-vars=GCP_PROJECT_ID=$PROJECT_ID'
+      - '--service-account=a2a-agents-service@$PROJECT_ID.iam.gserviceaccount.com'
+    waitFor: ['push-charity-agent']
+
+  # Step 6: Deploy Frontend to App Engine
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    entrypoint: 'gcloud'
+    args:
+      - 'app'
+      - 'deploy'
+      - 'frontend/streamlit-dashboard/app.yaml'
+      - '--project=$PROJECT_ID'
+      - '--version=$SHORT_SHA'
+      - '--promote'
+      - '--quiet'
+    waitFor: ['-']
+
+  # Step 7: Update Firestore security rules
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-firestore-rules'
+    entrypoint: 'gcloud'
+    args:
+      - 'firestore'
+      - 'deploy'
+      - '--rules=firestore.rules'
+      - '--project=$PROJECT_ID'
+    waitFor: ['-']
+
+  # Step 8: Integration Tests
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'integration-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Wait for services to be ready
+        sleep 30
+        
+        # Get service URLs
+        DONATION_URL=$(gcloud run services describe donation-service --region=${_REGION} --format="value(status.url)")
+        POINTS_URL=$(gcloud run services describe points-service --region=${_REGION} --format="value(status.url)")
+        
+        # Run integration tests
+        python deployment/integration_tests.py \
+          --donation-url="$DONATION_URL" \
+          --points-url="$POINTS_URL" \
+          --project-id="$PROJECT_ID"
+    waitFor: ['deploy-donation-service', 'deploy-points-service']
+
+  # Step 9: Performance Testing
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'performance-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Install load testing tools
+        pip install locust
+        
+        # Run performance tests
+        cd deployment/load-tests
+        locust --headless --users=10 --spawn-rate=2 --run-time=60s \
+          --host=https://$(gcloud run services describe donation-service --region=${_REGION} --format="value(status.url)" | sed 's|https://||')
+    waitFor: ['integration-tests']
+
+  # Step 10: Update API Gateway Configuration
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'update-api-gateway'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Get service URLs
+        DONATION_URL=$(gcloud run services describe donation-service --region=${_REGION} --format="value(status.url)")
+        POINTS_URL=$(gcloud run services describe points-service --region=${_REGION} --format="value(status.url)")
+        DONOR_URL=$(gcloud run services describe donor-engagement-agent --region=${_REGION} --format="value(status.url)")
+        CHARITY_URL=$(gcloud run services describe charity-optimization-agent --region=${_REGION} --format="value(status.url)")
+        
+        # Update OpenAPI spec with actual URLs
+        sed -i "s|\${donation_service_url}|$DONATION_URL|g" infrastructure/terraform/openapi.yaml
+        sed -i "s|\${points_service_url}|$POINTS_URL|g" infrastructure/terraform/openapi.yaml
+        sed -i "s|\${donor_agent_url}|$DONOR_URL|g" infrastructure/terraform/openapi.yaml
+        sed -i "s|\${charity_agent_url}|$CHARITY_URL|g" infrastructure/terraform/openapi.yaml
+        
+        # Create new API Gateway config
+        CONFIG_ID="config-$(date +%Y%m%d-%H%M%S)"
+        gcloud api-gateway api-configs create $CONFIG_ID \
+          --api=donation-platform-api \
+          --openapi-spec=infrastructure/terraform/openapi.yaml \
+          --project=$PROJECT_ID
+        
+        # Update gateway to use new config
+        gcloud api-gateway gateways update donation-platform-gateway \
+          --api-config=$CONFIG_ID \
+          --api=donation-platform-api \
+          --location=${_REGION} \
+          --project=$PROJECT_ID
+    waitFor: ['deploy-donation-service', 'deploy-points-service', 'deploy-donor-agent', 'deploy-charity-agent']
+
+  # Step 11: Deploy monitoring and alerting
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'setup-monitoring'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Import monitoring dashboard
+        gcloud alpha monitoring dashboards create --config-from-file=deployment/monitoring/dashboard.json
+        
+        # Create alerting policies
+        for policy in deployment/monitoring/alerts/*.json; do
+          gcloud alpha monitoring policies create --policy-from-file="$policy"
+        done
+    waitFor: ['deploy-donation-service', 'deploy-points-service']
+
+  # Step 12: Notification
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'notify-deployment'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "🚀 Deployment completed successfully!"
+        echo "📊 Dashboard: https://$(gcloud app describe --format="value(defaultHostname)")"
+        echo "🔗 API Gateway: https://$(gcloud api-gateway gateways describe donation-platform-gateway --location=${_REGION} --format="value(defaultHostname)")"
+        echo "📈 Monitoring: https://console.cloud.google.com/monitoring/dashboards"
+        
+        # Send Slack notification if webhook is configured
+        if [ -n "${_SLACK_WEBHOOK}" ]; then
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"✅ Donation Platform deployed successfully to '${_ENVIRONMENT}' environment\nCommit: '${COMMIT_SHA}'\nBranch: '${BRANCH_NAME}'"}' \
+            ${_SLACK_WEBHOOK}
+        fi
+    waitFor: ['update-api-gateway', 'setup-monitoring']
+
+# Timeout and resource configuration
+timeout: 3600s  # 1 hour timeout
+
+options:
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
+  env:
+    - 'CLOUDSDK_COMPUTE_ZONE=${_REGION}-a'
+    - 'CLOUDSDK_CORE_PROJECT=$PROJECT_ID'
+
+# Substitutions (variables)
+substitutions:
+  _REGION: 'us-central1'
+  _ENVIRONMENT: 'dev'
+  _SLACK_WEBHOOK: ''  # Optional Slack webhook for notifications
+
+# Images to be pushed to Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/donation-service:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/donation-service:latest'
+  - 'gcr.io/$PROJECT_ID/points-service:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/points-service:latest'
+  - 'gcr.io/$PROJECT_ID/donor-engagement-agent:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/donor-engagement-agent:latest'
+  - 'gcr.io/$PROJECT_ID/charity-optimization-agent:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/charity-optimization-agent:latest'
+
+# Artifacts to store
+artifacts:
+  objects:
+    location: 'gs://$PROJECT_ID-build-artifacts'
+    paths:
+      - 'coverage.xml'
+      - 'test-results.xml'
+      - 'security-scan-results.json'
