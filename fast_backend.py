@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="⚡ Fast Goodwill Gym API",
+    title="⚡ Goodwill Gym API",
     description="High-performance Pokemon Go-style donation platform",
     version="4.0.0"
 )
