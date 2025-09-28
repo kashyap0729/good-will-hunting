@@ -78,31 +78,81 @@ class GoogleADKNotificationAgent:
     def _build_prompt(self, notification_type: NotificationType, context: Dict) -> str:
         """Constructs a concise prompt for faster Gemini API response."""
         
+        user_name = context.get('user_name', 'User')
+        
         prompt = f"""Generate a short, encouraging notification for a Goodwill donation platform user.
 
 Type: {notification_type.value}
 Context: {context}
+User Name: {user_name}
 
 Requirements:
 - One sentence only
 - Include relevant emoji
 - Be positive and motivational
+- Use the user's actual name ({user_name}) instead of "you" or "your"
 - No quotes or preamble
+- For donations, mention the specific item donated and points earned
+- Example: "{user_name} donated Winter Coats and earned 75 points!" NOT "You donated..."
 
 Generate the message:"""
         return prompt
 
+    def _get_rate_limit_fallback(self, notification_type: NotificationType, context: Dict) -> str:
+        """Provide temporary fallback messages when rate limited"""
+        user_name = context.get('user_name', 'User')
+        item_name = context.get('item_name', 'items')
+        points = context.get('points', 0)
+        location = context.get('location', 'donation hub')
+        
+        fallback_messages = {
+            NotificationType.DONATION: [
+                f"🎁 Great job {user_name}! Thanks for donating {item_name} and earning {points} points!",
+                f"🌟 Amazing donation {user_name}! {user_name} contributed {item_name} and earned {points} points!",
+                f"💚 {user_name}, wonderful donation of {item_name}! +{points} points for making a difference!"
+            ],
+            NotificationType.MISSING_ITEM: [
+                f"🚨 Help needed! {item_name} shortage at {location}!",
+                f"⚡ Priority alert: {item_name} urgently needed at {location}!",
+                f"🎯 Critical need: {item_name} required at {location}!"
+            ],
+            NotificationType.ACHIEVEMENT: [
+                f"🏆 Congratulations {user_name}! Achievement unlocked: {context.get('achievement_name', 'New milestone')}!",
+                f"🎉 Well done {user_name}! {user_name} earned: {context.get('achievement_name', 'a new achievement')}!",
+                f"⭐ Amazing work {user_name}! {context.get('achievement_name', 'Achievement complete')}!"
+            ]
+        }
+        
+        import random
+        messages = fallback_messages.get(notification_type, [f"🎉 Great job {user_name}! Keep up the good work!"])
+        selected_message = random.choice(messages)
+        
+        # Add API quota notice for user awareness
+        return f"⚠️ AI temporarily unavailable - {selected_message}"
+
     def _get_message(self, notification_type: NotificationType, context: Dict) -> str:
         """
-        Generates a message using the Gemini AI API based on type and context.
-        Pure AI implementation - no fallbacks.
+        Generates a message using the Gemini AI API with rate limit handling.
         """
-        print(f"� Generating AI notification for {notification_type.value}")
+        print(f"🤖 Generating AI notification for {notification_type.value}")
         prompt = self._build_prompt(notification_type, context)
         
         try:
-            print("   � Sending request to Gemini AI...")
-            response = self.model.generate_content(prompt)
+            print("   ⚡ Sending request to Gemini AI...")
+            
+            # Configure generation for reduced quota usage
+            generation_config = {
+                "temperature": 0.7,
+                "top_p": 0.8,
+                "top_k": 40,
+                "max_output_tokens": 50,  # Reduced to save quota
+            }
+            
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            
             message = response.text.strip().replace('"', '')
             print(f"   ✨ AI generated: '{message[:60]}{'...' if len(message) > 60 else ''}'")
             
@@ -112,8 +162,17 @@ Generate the message:"""
             return message
             
         except Exception as e:
+            error_msg = str(e)
             print(f"   ❌ Gemini AI call failed: {e}")
-            raise RuntimeError(f"AI notification generation failed: {e}")
+            
+            # Check for rate limit error
+            if "429" in error_msg or "quota" in error_msg.lower() or "exceeded" in error_msg.lower():
+                print("   ⚠️ Rate limit exceeded - using fallback message")
+                return self._get_rate_limit_fallback(notification_type, context)
+            
+            # For other errors, still provide fallback
+            print("   ⚠️ API error - using fallback message")  
+            return self._get_rate_limit_fallback(notification_type, context)
 
     def generate_notification(self, notification_type: NotificationType, context: Dict = None) -> Dict:
         """

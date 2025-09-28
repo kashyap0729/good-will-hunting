@@ -302,12 +302,26 @@ async def make_donation(donation: DonationCreate, background_tasks: BackgroundTa
         get_cached_users.cache_clear()
         get_cached_storages.cache_clear()
         
-        # Generate notification
+        # Get user info for notification
+        conn = pool.get_connection()
+        try:
+            user_cursor = conn.cursor()
+            user_cursor.execute("SELECT username, full_name FROM users WHERE id = ?", (donation.user_id,))
+            user_row = user_cursor.fetchone()
+            user_name = user_row['full_name'] if user_row and user_row['full_name'] else (user_row['username'] if user_row else f"User {donation.user_id}")
+        except Exception as e:
+            logger.error(f"Error getting user info: {e}")
+            user_name = f"User {donation.user_id}"
+        finally:
+            pool.return_connection(conn)
+        
+        # Generate notification with user context
         notification = notify_donation(
             donation.item_name,
             result['points_awarded'],
             is_high_demand=result['is_missing_item_bonus'],
-            bonus=result['bonus_points']
+            bonus=result['bonus_points'],
+            user_name=user_name
         )
         
         # Return comprehensive result

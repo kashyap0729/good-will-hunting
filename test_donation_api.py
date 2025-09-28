@@ -10,10 +10,10 @@ import json
 def test_donation():
     url = "http://localhost:8000/donate"
     data = {
-        "user_id": 1,
+        "user_id": 1,  # Alice Demo user
         "storage_id": 1,
-        "item_name": "Test Blanket",
-        "quantity": 1
+        "item_name": "Winter Coats",  # Real item from missing items
+        "quantity": 2
     }
     
     try:
