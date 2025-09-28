@@ -154,7 +154,6 @@ class DatabaseManager:
                 ("South Beach Donation Hub", "123 Ocean Dr, South Beach", 25.7617, -80.1918),
                 ("Wynwood Warehouse", "456 NW 2nd Ave, Wynwood", 25.8010, -80.1998),
                 ("Coral Gables Vault", "789 Miracle Mile, Coral Gables", 25.7463, -80.2551),
-                ("Brickell Bay Boutique", "321 Brickell Ave, Brickell", 25.7617, -80.1918),
                 ("Little Havana Helper Hub", "654 SW 8th St, Little Havana", 25.7663, -80.2201),
                 ("Coconut Grove Pantry", "987 Main Hwy, Coconut Grove", 25.7282, -80.2436)
             ]
@@ -356,6 +355,145 @@ class DatabaseManager:
         
         return None
 
+    def process_donation(self, user_id: int, storage_id: int, item_name: str, quantity: int = 1):
+        """Process a donation and update user stats dynamically"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Start transaction
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Get current user stats
+            cursor.execute("""
+                SELECT total_points, total_donations, streak_days, last_donation_date, tier, achievements
+                FROM users WHERE id = ? AND is_active = 1
+            """, (user_id,))
+            
+            user_data = cursor.fetchone()
+            if not user_data:
+                raise Exception("User not found")
+            
+            # Calculate points
+            cursor.execute("SELECT base_points, demand_multiplier FROM item_catalog WHERE item_name = ?", (item_name,))
+            item_data = cursor.fetchone()
+            
+            base_points = (item_data['base_points'] if item_data else 15) * quantity
+            
+            # Check if it's a high-demand item
+            cursor.execute("""
+                SELECT bonus_points FROM missing_items_requests 
+                WHERE storage_id = ? AND item_name = ? AND fulfilled = 0
+            """, (storage_id, item_name))
+            
+            missing_item = cursor.fetchone()
+            bonus_points = missing_item['bonus_points'] * quantity if missing_item else 0
+            is_missing_item = bool(missing_item)
+            
+            total_points = base_points + bonus_points
+            
+            # Calculate streak
+            today = date.today()
+            last_donation = datetime.strptime(user_data['last_donation_date'], '%Y-%m-%d').date() if user_data['last_donation_date'] else None
+            
+            if last_donation == today:
+                # Same day donation, keep streak
+                new_streak = user_data['streak_days']
+            elif last_donation == date.fromordinal(today.toordinal() - 1):
+                # Consecutive day, increment streak
+                new_streak = user_data['streak_days'] + 1
+            else:
+                # Broken streak, reset to 1
+                new_streak = 1
+            
+            # Update achievements
+            current_achievements = json.loads(user_data['achievements']) if user_data['achievements'] else []
+            new_achievements = current_achievements.copy()
+            
+            # Check for new achievements
+            if user_data['total_donations'] == 0 and "First Steps" not in new_achievements:
+                new_achievements.append("First Steps")
+            
+            if user_data['total_donations'] + 1 >= 5 and "Generous Giver" not in new_achievements:
+                new_achievements.append("Generous Giver")
+            
+            if new_streak >= 7 and "Streak Master" not in new_achievements:
+                new_achievements.append("Streak Master")
+            
+            # Determine tier based on total points
+            new_total_points = user_data['total_points'] + total_points
+            if new_total_points >= 2000:
+                new_tier = 'platinum'
+            elif new_total_points >= 1000:
+                new_tier = 'gold'
+            elif new_total_points >= 500:
+                new_tier = 'silver'
+            else:
+                new_tier = 'bronze'
+            
+            tier_upgraded = new_tier != user_data['tier']
+            
+            # Insert donation record
+            cursor.execute("""
+                INSERT INTO donations (user_id, storage_id, item_name, quantity, points_awarded, bonus_points, missing_item_bonus)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (user_id, storage_id, item_name, quantity, total_points, bonus_points, is_missing_item))
+            
+            donation_id = cursor.lastrowid
+            
+            # Update user stats
+            cursor.execute("""
+                UPDATE users 
+                SET total_points = ?, 
+                    total_donations = ?,
+                    streak_days = ?,
+                    last_donation_date = ?,
+                    tier = ?,
+                    achievements = ?
+                WHERE id = ?
+            """, (new_total_points, user_data['total_donations'] + 1, new_streak, 
+                  today.isoformat(), new_tier, json.dumps(new_achievements), user_id))
+            
+            # Update storage inventory if it exists
+            cursor.execute("""
+                UPDATE storage_inventory 
+                SET current_quantity = current_quantity + ?, last_updated = CURRENT_TIMESTAMP
+                WHERE storage_id = ? AND item_name = ?
+            """, (quantity, storage_id, item_name))
+            
+            # Mark missing item request as fulfilled if this donation helps
+            if is_missing_item:
+                cursor.execute("""
+                    UPDATE missing_items_requests 
+                    SET fulfilled = 1 
+                    WHERE storage_id = ? AND item_name = ? AND fulfilled = 0
+                """, (storage_id, item_name))
+            
+            # Commit transaction
+            cursor.execute("COMMIT")
+            
+            logger.info(f"Processed donation: User {user_id} donated {quantity} {item_name} for {total_points} points")
+            
+            return {
+                'donation_id': donation_id,
+                'points_awarded': total_points,
+                'bonus_points': bonus_points,
+                'new_total_points': new_total_points,
+                'new_donations_count': user_data['total_donations'] + 1,
+                'new_streak': new_streak,
+                'tier_upgraded': tier_upgraded,
+                'old_tier': user_data['tier'],
+                'new_tier': new_tier,
+                'new_achievements': [a for a in new_achievements if a not in current_achievements],
+                'is_missing_item_bonus': is_missing_item
+            }
+            
+        except Exception as e:
+            cursor.execute("ROLLBACK")
+            logger.error(f"Error processing donation: {e}")
+            raise e
+        finally:
+            conn.close()
 # Initialize database manager instance
 db_manager = DatabaseManager()
 
@@ -365,6 +503,9 @@ def get_missing_items(storage_id: int = None):
 
 def update_gym_leader(storage_id: int):
     return db_manager.update_gym_leader(storage_id)
+
+def process_donation(user_id: int, storage_id: int, item_name: str, quantity: int = 1):
+    return db_manager.process_donation(user_id, storage_id, item_name, quantity)
 
 if __name__ == "__main__":
     # Initialize database when run directly

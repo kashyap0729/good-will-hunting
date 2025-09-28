@@ -72,7 +72,7 @@ Once launched, access these URLs:
 ## 🎯 Features
 
 ### 🗺️ **Interactive Miami Gym Map**
-- **6 Real Miami Locations**: South Beach, Wynwood, Coral Gables, Brickell, Little Havana, Coconut Grove
+- **5 Real Miami Locations**: South Beach, Wynwood, Coral Gables, Little Havana, Coconut Grove
 - **Pokemon Go-style Markers**: Red (occupied by leader), Green (available for challenge)
 - **Click Interactions**: View gym leader info and challenge status
 
@@ -101,8 +101,7 @@ Once launched, access these URLs:
 | 🏖️ South Beach Donation Hub | South Beach | 123 Ocean Dr |
 | 🎨 Wynwood Warehouse | Wynwood Arts District | 456 NW 2nd Ave |
 | 🏛️ Coral Gables Vault | Coral Gables | 789 Miracle Mile |
-| 🏙️ Brickell Bay Boutique | Brickell Financial | 321 Brickell Ave |
-| 🌶️ Little Havana Helper Hub | Little Havana | 654 SW 8th St |
+| ️ Little Havana Helper Hub | Little Havana | 654 SW 8th St |
 | 🌴 Coconut Grove Pantry | Coconut Grove | 987 Main Hwy |
 
 ## 💻 Cross-Platform Support

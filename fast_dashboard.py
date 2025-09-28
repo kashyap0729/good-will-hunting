@@ -251,7 +251,7 @@ def main():
                 current_user_id = user_options[selected_option]
                 
                 # user profile display
-                user_profile, _ = fast_api_request(f"/users/{current_user_id}")
+                user_profile, _ = fast_api_request(f"/users/{current_user_id}", use_cache=False)  # Always fetch fresh data
                 if user_profile:
                     st.markdown(f"### 🎮 {user_profile['username']}")
                     display_tier_badge(user_profile['tier'])
@@ -263,6 +263,14 @@ def main():
                     with col2:
                         st.metric("Streak", f"{user_profile['streak_days']} days")
                         st.metric("Achievements", len(user_profile['achievements']))
+                        
+                    # Add refresh button for immediate stats update
+                    if st.button("🔄 Refresh Stats", key="refresh_profile"):
+                        # Clear cache and force refresh
+                        for key in list(st.session_state.keys()):
+                            if "cache" in key.lower():
+                                del st.session_state[key]
+                        st.rerun()
         else:
             st.error("Failed to load Donor")
             st.stop()
@@ -412,17 +420,44 @@ def main():
                 result, error = fast_api_request("/donate", "POST", donation_data, use_cache=False)
                 
                 if result:
+                    # Show comprehensive success message with updated stats
                     st.success(f"🎉 Success! +{result['points_awarded']} points!")
+                    
+                    # Show bonus information if applicable
+                    if result.get('bonus_points', 0) > 0:
+                        st.info(f"🚨 High-Demand Bonus: +{result['bonus_points']} extra points!")
+                    
+                    # Show tier upgrade if applicable
+                    if result.get('tier_upgraded', False):
+                        st.balloons()
+                        st.success(f"🏆 TIER UPGRADE! {result['old_tier'].title()} → {result['new_tier'].title()}")
+                    
+                    # Show new achievements
+                    if result.get('new_achievements', []):
+                        for achievement in result['new_achievements']:
+                            st.success(f"🏅 New Achievement Unlocked: {achievement}")
+                    
+                    # Display updated stats
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("New Total Points", f"{result.get('new_total_points', 0):,}", 
+                                f"+{result['points_awarded']}")
+                    with col2:
+                        st.metric("Total Donations", result.get('new_donations_count', 0), "+1")
+                    with col3:
+                        st.metric("Streak", f"{result.get('new_streak', 0)} days", 
+                                "+1" if result.get('new_streak', 0) > 0 else "Reset")
                     
                     # Clear relevant caches
                     for key in ["/users_cache", "/stats_cache"]:
                         if key in st.session_state:
                             del st.session_state[key]
                     
+                    # Auto-refresh after showing success message
                     if result['bonus_points'] > 0:
                         st.balloons()
                     
-                    time.sleep(2)
+                    time.sleep(3)  # Give user time to read the success message
                     st.rerun()
                 else:
                     st.error(f"❌ Donation failed: {error}")

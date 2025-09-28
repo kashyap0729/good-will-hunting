@@ -19,7 +19,7 @@ from functools import lru_cache
 import asyncio
 
 # Import our custom modules
-from database import DatabaseManager, get_missing_items, update_gym_leader
+from database import DatabaseManager, get_missing_items, update_gym_leader, process_donation
 from notification_agent import notification_agent, notify_donation, notify_achievement
 
 # Configure logging
@@ -278,87 +278,67 @@ async def create_user(user_data: UserCreate):
 
 @app.post("/donate")
 async def make_donation(donation: DonationCreate, background_tasks: BackgroundTasks):
-    """Process a donation (optimized)"""
-    print(f"DEBUG: DONATION STARTED - User {donation.user_id} -> Storage {donation.storage_id}: {donation.item_name}")
-    conn = pool.get_connection()
+    """Process a donation with dynamic stats update"""
+    logger.info(f"Processing donation: User {donation.user_id} -> Storage {donation.storage_id}: {donation.item_name} x{donation.quantity}")
+    
     try:
-        # Fast validation
-        cursor = conn.cursor()
-        cursor.execute("SELECT total_points, total_donations, streak_days FROM users WHERE id = ?", 
-                      (donation.user_id,))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        # Use our comprehensive donation processing function
+        result = process_donation(
+            donation.user_id, 
+            donation.storage_id, 
+            donation.item_name, 
+            donation.quantity
+        )
         
-        # Quick points calculation (simplified)
-        base_points = 15 * donation.quantity
-        is_missing = donation.item_name in ['Winter Coats', 'Baby Formula', 'Blankets']
-        bonus_points = 50 * donation.quantity if is_missing else 0
-        total_points = base_points + bonus_points
-        
-        # Fast insert
-        cursor.execute("""
-            INSERT INTO donations (user_id, storage_id, item_name, quantity, points_awarded, bonus_points, missing_item_bonus)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (donation.user_id, donation.storage_id, donation.item_name, 
-              donation.quantity, total_points, bonus_points, is_missing))
-        
-        donation_id = cursor.lastrowid
-        
-        # Update user points (single query)
-        new_total = user['total_points'] + total_points
-        new_donations = user['total_donations'] + 1
-        new_streak = user['streak_days'] + 1  # Simplified streak logic
-        
-        cursor.execute("""
-            UPDATE users SET total_points = ?, total_donations = ?, 
-                           streak_days = ?, last_donation_date = ? 
-            WHERE id = ?
-        """, (new_total, new_donations, new_streak, date.today(), donation.user_id))
-        
-        conn.commit()
-        
-        # Update gym leader for this storage - MUST BE AFTER COMMIT BUT BEFORE POOL RETURN
-        print(f"DEBUG: About to update gym leader for storage {donation.storage_id}")
+        # Update gym leader for this storage
+        update_result = None
         try:
             update_result = update_gym_leader(donation.storage_id)
-            print(f"DEBUG: Update result: {update_result}")
-            print(f"DEBUG: Successfully updated gym leader for storage {donation.storage_id}")
+            logger.info(f"Updated gym leader for storage {donation.storage_id}")
         except Exception as gym_error:
-            print(f"DEBUG: ERROR updating gym leader: {gym_error}")
             logger.error(f"Gym leader update failed: {gym_error}")
-        print(f"DEBUG: Finished gym leader update process for storage {donation.storage_id}")
         
-        # Clear caches AFTER gym leader update
+        # Clear caches to ensure fresh data
         get_cached_users.cache_clear()
         get_cached_storages.cache_clear()
         
         # Generate notification
         notification = notify_donation(
             donation.item_name,
-            total_points,
-            is_high_demand=is_missing,
-            bonus=bonus_points
+            result['points_awarded'],
+            is_high_demand=result['is_missing_item_bonus'],
+            bonus=result['bonus_points']
         )
         
-        return {
-            "donation_id": donation_id,
-            "points_awarded": total_points,
-            "bonus_points": bonus_points,
-            "missing_item_bonus": is_missing,
+        # Return comprehensive result
+        response = {
+            "donation_id": result['donation_id'],
+            "points_awarded": result['points_awarded'],
+            "bonus_points": result['bonus_points'],
+            "new_total_points": result['new_total_points'],
+            "new_donations_count": result['new_donations_count'],
+            "new_streak": result['new_streak'],
+            "missing_item_bonus": result['is_missing_item_bonus'],
+            "tier_upgraded": result['tier_upgraded'],
+            "old_tier": result['old_tier'] if result['tier_upgraded'] else None,
+            "new_tier": result['new_tier'],
+            "new_achievements": result['new_achievements'],
             "notification": notification,
-            "tier_upgraded": False,  # Simplified for speed
-            "gym_leader_updated": bool(update_result) if 'update_result' in locals() else False
+            "gym_leader_updated": bool(update_result)
         }
+        
+        logger.info(f"Donation processed successfully: {result['points_awarded']} points awarded")
+        return response
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing donation: {e}")
-        conn.rollback()
-        raise HTTPException(status_code=500, detail="Failed to process donation")
+        raise HTTPException(status_code=500, detail=f"Failed to process donation: {str(e)}")
+        
     finally:
-        pool.return_connection(conn)
+        # No need for manual connection cleanup since process_donation handles it
+        pass
 
 @app.post("/force-update-gym-leaders")
 async def force_update_gym_leaders():
