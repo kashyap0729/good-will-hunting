@@ -484,7 +484,7 @@ def main():
         st.markdown("""
         ## ⚡ Welcome to Goodwill Gym!
         
-        **High-Performance Pokemon Go-style Charitable Giving**
+        **High-Performance Pokemon Go-sstyle Charitable Giving**
         
         ### Quick Start:
         1. 📝 **Register** in the sidebar (30 seconds)
