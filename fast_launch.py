@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
 """
-Fast Launcher - Optimized Platform Startup
-Starts both fast_backend.py and fast_dashboard.py with proper sequencing
+Fast Launcher - Portable Platform Startup
+Automatically detects project directory and starts both backend and dashboard
+Works on Windows, macOS, and Linux
 """
 
 import subprocess
@@ -8,27 +10,99 @@ import time
 import requests
 import sys
 import os
+import platform
 from pathlib import Path
 
-def check_python_path():
-    """Ensure we're in the right directory and virtual environment"""
-    project_dir = Path(r"d:\GCP Hackathon\goodwillC")
+def get_project_directory():
+    """Auto-detect project directory - works from any location"""
+    # Try current working directory first
+    current_dir = Path.cwd()
     
-    if not project_dir.exists():
-        print(f"❌ Project directory not found: {project_dir}")
-        return False
+    # Look for key project files to confirm we're in the right place
+    key_files = ['fast_backend.py', 'fast_dashboard.py', 'database.py']
+    
+    # Check current directory
+    if all((current_dir / file).exists() for file in key_files):
+        return current_dir
+    
+    # Check script directory
+    script_dir = Path(__file__).parent.absolute()
+    if all((script_dir / file).exists() for file in key_files):
+        return script_dir
+    
+    # Check parent directories up to 3 levels
+    for parent in [current_dir.parent, current_dir.parent.parent, current_dir.parent.parent.parent]:
+        if all((parent / file).exists() for file in key_files):
+            return parent
+    
+    return None
+
+def check_python_environment():
+    """Cross-platform environment setup and validation"""
+    # Auto-detect project directory
+    project_dir = get_project_directory()
+    
+    if not project_dir:
+        print("❌ Goodwill Gym project files not found!")
+        print("📂 Make sure you're running this from the project directory or its subdirectories")
+        print("🔍 Looking for: fast_backend.py, fast_dashboard.py, database.py")
+        return False, None, None
     
     os.chdir(project_dir)
-    print(f"📁 Working directory: {project_dir}")
+    print(f"📁 Project directory: {project_dir}")
     
-    # Check if virtual environment exists
-    venv_path = project_dir / ".venv"
-    if venv_path.exists():
+    # Check for virtual environment (cross-platform)
+    venv_candidates = [
+        project_dir / ".venv",
+        project_dir / "venv", 
+        project_dir / "env"
+    ]
+    
+    venv_path = None
+    for candidate in venv_candidates:
+        if candidate.exists():
+            venv_path = candidate
+            break
+    
+    if venv_path:
         print(f"✅ Virtual environment found: {venv_path}")
-        return True
     else:
-        print(f"⚠️ Virtual environment not found at {venv_path}")
-        return False
+        print("⚠️ No virtual environment found - will try system Python")
+        print("💡 Recommended: Create virtual environment with 'python -m venv .venv'")
+    
+    # Determine Python executable path (cross-platform)
+    python_exe = get_python_executable(venv_path)
+    streamlit_exe = get_streamlit_executable(venv_path)
+    
+    return True, python_exe, streamlit_exe
+
+def get_python_executable(venv_path=None):
+    """Get the correct Python executable path for any OS"""
+    if venv_path:
+        if platform.system() == "Windows":
+            python_exe = venv_path / "Scripts" / "python.exe"
+        else:  # macOS/Linux
+            python_exe = venv_path / "bin" / "python"
+        
+        if python_exe.exists():
+            return str(python_exe)
+    
+    # Fallback to system Python
+    return sys.executable
+
+def get_streamlit_executable(venv_path=None):
+    """Get the correct Streamlit executable path for any OS"""
+    if venv_path:
+        if platform.system() == "Windows":
+            streamlit_exe = venv_path / "Scripts" / "streamlit.exe"
+        else:  # macOS/Linux  
+            streamlit_exe = venv_path / "bin" / "streamlit"
+        
+        if streamlit_exe.exists():
+            return str(streamlit_exe)
+    
+    # Fallback to system streamlit
+    return "streamlit"
 
 def wait_for_api(max_attempts=30, delay=2):
     """Wait for the API to be ready"""
@@ -50,24 +124,16 @@ def wait_for_api(max_attempts=30, delay=2):
     print(f"❌ Fast API failed to start after {max_attempts} attempts")
     return False
 
-def start_fast_backend():
-    """Start the fast backend API"""
+def start_fast_backend(python_exe):
+    """Start the fast backend API (cross-platform)"""
     print("\n🚀 Starting Fast Backend API...")
     
     try:
-        # Use the virtual environment Python
-        venv_python = r"d:\GCP Hackathon\goodwillC\.venv\Scripts\python.exe"
-        
-        if not Path(venv_python).exists():
-            print(f"❌ Python executable not found: {venv_python}")
-            return None
-        
         backend_process = subprocess.Popen(
-            [venv_python, "fast_backend.py"],
+            [python_exe, "fast_backend.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            cwd=r"d:\GCP Hackathon\goodwillC"
+            text=True
         )
         
         print(f"🔄 Fast Backend started with PID: {backend_process.pid}")
@@ -75,26 +141,20 @@ def start_fast_backend():
         
     except Exception as e:
         print(f"❌ Failed to start Fast Backend: {e}")
+        print(f"💡 Make sure Python and dependencies are installed")
+        print(f"💡 Try: pip install fastapi uvicorn sqlite3")
         return None
 
-def start_fast_dashboard():
-    """Start the fast dashboard"""
+def start_fast_dashboard(streamlit_exe):
+    """Start the fast dashboard (cross-platform)"""
     print("\n🎮 Starting Fast Dashboard...")
     
     try:
-        # Use the virtual environment streamlit
-        venv_streamlit = r"d:\GCP Hackathon\goodwillC\.venv\Scripts\streamlit.exe"
-        
-        if not Path(venv_streamlit).exists():
-            print(f"❌ Streamlit executable not found: {venv_streamlit}")
-            return None
-        
         dashboard_process = subprocess.Popen(
-            [venv_streamlit, "run", "fast_dashboard.py", "--server.port", "8501", "--server.headless", "true"],
+            [streamlit_exe, "run", "fast_dashboard.py", "--server.port", "8501", "--server.headless", "true"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            cwd=r"d:\GCP Hackathon\goodwillC"
+            text=True
         )
         
         print(f"🔄 Fast Dashboard started with PID: {dashboard_process.pid}")
@@ -102,6 +162,8 @@ def start_fast_dashboard():
         
     except Exception as e:
         print(f"❌ Failed to start Fast Dashboard: {e}")
+        print(f"💡 Make sure Streamlit is installed")
+        print(f"💡 Try: pip install streamlit folium plotly")
         return None
 
 def check_dashboard_ready(max_attempts=20, delay=3):
@@ -127,15 +189,30 @@ def check_dashboard_ready(max_attempts=20, delay=3):
 def main():
     print("="*60)
     print("⚡ FAST GOODWILL GYM PLATFORM LAUNCHER")
+    print(f"🖥️  Platform: {platform.system()} {platform.release()}")
+    print(f"🐍 Python: {sys.version.split()[0]}")
     print("="*60)
     
-    # Check Python environment
-    if not check_python_path():
-        print("❌ Environment check failed!")
+    # Check Python environment (cross-platform)
+    env_ok, python_exe, streamlit_exe = check_python_environment()
+    if not env_ok:
+        print("❌ Environment setup failed!")
+        print("\n📋 Setup Instructions:")
+        print("1. Install Python 3.8+ from https://python.org")
+        print("2. Create virtual environment: python -m venv .venv")
+        print("3. Activate virtual environment:")
+        if platform.system() == "Windows":
+            print("   Windows: .venv\\Scripts\\activate")
+        else:
+            print("   macOS/Linux: source .venv/bin/activate")
+        print("4. Install dependencies: pip install -r requirements.txt")
         return False
     
+    print(f"🐍 Using Python: {python_exe}")
+    print(f"📊 Using Streamlit: {streamlit_exe}")
+    
     # Start backend first
-    backend_process = start_fast_backend()
+    backend_process = start_fast_backend(python_exe)
     if not backend_process:
         print("❌ Failed to start backend!")
         return False
@@ -148,7 +225,7 @@ def main():
         return False
     
     # Start dashboard
-    dashboard_process = start_fast_dashboard()
+    dashboard_process = start_fast_dashboard(streamlit_exe)
     if not dashboard_process:
         print("❌ Failed to start dashboard!")
         if backend_process:

@@ -18,7 +18,7 @@ import time
 
 # App configuration
 st.set_page_config(
-    page_title="⚡ Goodwill Gym",
+    page_title=" Goodwill Gym",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -146,7 +146,7 @@ def display_tier_badge(tier: str):
     """, unsafe_allow_html=True)
 
 def create_fast_map(storages_data):
-    """Create optimized map with minimal features for speed"""
+    """Create optimized map with clear gym status visualization"""
     if not storages_data:
         return None
     
@@ -154,14 +154,14 @@ def create_fast_map(storages_data):
     center_lat = sum(s['latitude'] for s in storages_data) / len(storages_data)
     center_lon = sum(s['longitude'] for s in storages_data) / len(storages_data)
     
-    # Simple map with basic markers
+    # Create map with better contrast
     m = folium.Map(
         location=[center_lat, center_lon], 
         zoom_start=11,
         tiles='OpenStreetMap'
     )
     
-    # Add simplified markers
+    # Add markers with clear status indicators
     for storage in storages_data:
         if storage['gym_leader_username']:
             icon_color = 'red'
@@ -176,16 +176,25 @@ def create_fast_map(storages_data):
             tooltip=f"🏛️ {storage['name']}",
             icon=folium.Icon(color=icon_color, icon='star')
         ).add_to(m)
-    
     return m
+    # tooltip=f"🏛️ {storage['name']} - {'👑 Occupied' if storage['gym_leader_username'] else '✨ Available'}",
+    #         icon=folium.Icon(
+    #             color=icon_color, 
+    #             icon=icon_symbol, 
+    #             prefix='fa',
+    #             icon_size=(20, 20)
+    #         )
+    #     ).add_to(m)
+    
+    # return m
 
 def main():
-    # header
+    # Header
     st.markdown("""
     <div class="main-header">
-        <h1 style='color: white; margin: 0;'>⚡ Goodwill Gym Platform</h1>
+        <h1 style='color: white; margin: 0;'>⚡ Fast Goodwill Gym Platform</h1>
         <p style='color: white; margin: 0; opacity: 0.9;'>
-            High-Performance Pokemon Go-style Charitable Giving
+            🏖️ Miami Pokemon Go-style Charitable Gaming • 🏆 Compete • 📦 Donate • 🎯 Win
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -278,9 +287,10 @@ def main():
                 st.metric("Critical Needs", stats_data['critical_needs'], 
                          delta="⚠️ Urgent" if stats_data['critical_needs'] > 5 else "✅ Good")
         
-        # map section
+        # Interactive map section
         st.markdown("---")
-        st.subheader("🗺️ Gym Locations (Map)")
+        st.subheader("🗺️  Gym Locations - Interactive Map")
+        st.info("💡 **Red markers** = Occupied by gym leaders | **Green markers** = Available for challenge")
         
         storages_data, _ = fast_api_request("/storages")
         

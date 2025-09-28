@@ -1,17 +1,32 @@
-# Goodwill Gaming Platform v2.0 - Clean Requirements
-# Core dependencies for enhanced platform with Maps & SQLite
+# Fast Goodwill Gym Platform - Cross-Platform Requirements
+# Install with: pip install -r requirements.txt
 
-fastapi>=0.100.0
-uvicorn[standard]>=0.20.0
+# Core API Framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Web Dashboard
 streamlit>=1.28.0
-requests>=2.31.0
-plotly>=5.17.0
-pydantic>=2.0.0
-python-multipart>=0.0.6
-
-# Maps functionality
-folium>=0.15.0
 streamlit-folium>=0.15.0
 
-# Google ADK mock (since real package not available on PyPI)
-# Using built-in libraries for notification agent
+# Data Processing & Visualization  
+pandas>=2.1.0
+plotly>=5.17.0
+
+# Maps and Geolocation
+folium>=0.15.0
+
+# HTTP Requests & Validation
+requests>=2.31.0
+pydantic>=2.5.0
+email-validator>=2.1.0
+python-multipart>=0.0.6
+
+# Environment & Configuration
+python-dotenv>=1.0.0
+
+# Date/Time utilities
+python-dateutil>=2.8.2
+
+# Note: sqlite3 is built into Python 3.x
+# Note: All other dependencies use Python built-ins for maximum portability
