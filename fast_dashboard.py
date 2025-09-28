@@ -88,14 +88,32 @@ st.markdown("""
         margin: 0.3rem 0;
         border-left: 4px solid;
         color: #212529;
+        position: relative;
+    }
+    
+    .ai-indicator {
+        position: absolute;
+        top: 4px;
+        right: 8px;
+        font-size: 0.7rem;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 10px;
+        opacity: 0.8;
     }
     
     .notification-missing_item { border-left-color: #E74C3C; background: #fff5f5; color: #212529; }
+    .notification-achievement { border-left-color: #F1C40F; background: #fffef0; color: #212529; }
+    .notification-donation { border-left-color: #27AE60; background: #f0fff4; color: #212529; }
+    .notification-streak { border-left-color: #E67E22; background: #fff8f0; color: #212529; }
+    .notification-gym_leader { border-left-color: #9B59B6; background: #faf0ff; color: #212529; }
+    .notification-tier_upgrade { border-left-color: #3498DB; background: #f0f8ff; color: #212529; }
 </style>
 """, unsafe_allow_html=True)
 
 def fast_api_request(endpoint: str, method: str = "GET", data: dict = None, use_cache: bool = True):
-    """API requests with caching and short timeouts"""
+    """API requests with caching and smart timeouts"""
     
     # Check cache first for GET requests
     if method == "GET" and use_cache:
@@ -104,14 +122,22 @@ def fast_api_request(endpoint: str, method: str = "GET", data: dict = None, use_
             cache_data = st.session_state[cache_key]
             if time.time() - cache_data['timestamp'] < CACHE_TIMEOUT:
                 return cache_data['data'], None
-    
+
     try:
         url = f"{API_BASE_URL}{endpoint}"
         
-        if method == "GET":
-            response = requests.get(url, timeout=3)  # Short timeout for speed
+        # Smart timeout based on endpoint
+        if "notifications" in endpoint:
+            timeout = 20  # Longer timeout for AI notifications
         elif method == "POST":
-            response = requests.post(url, json=data, timeout=5)
+            timeout = 10  # Medium timeout for donations
+        else:
+            timeout = 5   # Short timeout for regular requests
+        
+        if method == "GET":
+            response = requests.get(url, timeout=timeout)
+        elif method == "POST":
+            response = requests.post(url, json=data, timeout=timeout)
         
         if response.status_code == 200:
             result = response.json()
@@ -338,7 +364,14 @@ def main():
         st.subheader("🚨 Critical Needs (Load)")
         
         missing_items_data, _ = fast_api_request("/missing-items")
-        notifications_data, _ = fast_api_request("/notifications/missing-items")
+        # Get notifications with debugging
+        notifications_data, notifications_error = fast_api_request("/notifications/all")
+        
+        # Debug information
+        if notifications_error:
+            st.warning(f"⚠️ Notifications API Error: {notifications_error}")
+        if not notifications_data:
+            st.info("🔄 No notifications data received from API")
         
         col1, col2 = st.columns(2)
         
@@ -355,14 +388,83 @@ def main():
                     """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown("#### 🤖 Notifications")
+            col2a, col2b = st.columns([3, 1])
+            with col2a:
+                st.markdown("#### 🤖 AI-Powered Notifications")
+            with col2b:
+                if st.button("🔄", help="Refresh notifications", key="refresh_notifications"):
+                    # Clear notifications cache and rerun
+                    for key in ["/notifications/all"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+            
             if notifications_data:
+                st.success(f"✅ Found {len(notifications_data)} notifications from API")
                 for notification in notifications_data:
+                    # Extract notification details
+                    notif_type = notification.get('type', 'info')
+                    icon = notification.get('ai_icon', notification.get('icon', '💙'))
+                    message = notification.get('message', 'No message')
+                    ai_generated = notification.get('ai_generated', False)
+                    ai_model = notification.get('ai_model', 'AI')
+                    
+                    # Clean the message of any HTML tags (in case they're pre-escaped)
+                    import re
+                    clean_message = re.sub(r'<[^>]+>', '', message)
+                    
+                    # Create AI indicator
+                    ai_badge = ""
+                    if ai_generated:
+                        ai_badge = '<div class="ai-indicator">🧠 AI</div>'
+                    
+                    # Render the notification with proper HTML
                     st.markdown(f"""
-                    <div class="notification-card notification-{notification['type']}">
-                        <strong>{notification['icon']} {notification['message']}</strong>
+                    <div class="notification-card notification-{notif_type}">
+                        {ai_badge}
+                        <strong>{icon} {clean_message}</strong>
+                        <br><small style="opacity: 0.7;">Generated by {ai_model}</small>
                     </div>
                     """, unsafe_allow_html=True)
+            
+            # Show session state notifications as fallback
+            elif 'recent_notifications' in st.session_state and st.session_state.recent_notifications:
+                st.info("📱 Showing recent donation notifications from this session:")
+                for notification in st.session_state.recent_notifications:
+                    notif_type = notification.get('type', 'donation')
+                    icon = notification.get('ai_icon', notification.get('icon', '💙'))
+                    message = notification.get('message', 'No message')
+                    ai_model = notification.get('ai_model', 'AI')
+                    
+                    # Clean message
+                    import re
+                    clean_message = re.sub(r'<[^>]+>', '', message)
+                    
+                    st.markdown(f"""
+                    <div class="notification-card notification-{notif_type}">
+                        <div class="ai-indicator">🧠 AI</div>
+                        <strong>{icon} {clean_message}</strong>
+                        <br><small style="opacity: 0.7;">Generated by {ai_model}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            elif notifications_error:
+                st.error(f"❌ Failed to load notifications: {notifications_error}")
+                st.info("💡 Make sure the backend is running: `python fast_backend.py`")
+                
+                # Show session notifications as fallback even with API error
+                if 'recent_notifications' in st.session_state and st.session_state.recent_notifications:
+                    st.info("📱 Showing recent donation notifications from this session:")
+                    for notification in st.session_state.recent_notifications[:5]:
+                        st.markdown(f"🤖 {notification.get('ai_icon', '💙')} {notification.get('message', 'No message')}")
+            
+            else:
+                st.info("🤖 No AI notifications available. Make a donation to see personalized AI messages!")
+                # Show some debug info
+                with st.expander("🔧 Debug Info"):
+                    st.write("API Response:", notifications_data)
+                    st.write("Error:", notifications_error)
+                    st.write("Session notifications:", st.session_state.get('recent_notifications', 'None'))
         
         # donation form
         st.markdown("---")
@@ -437,6 +539,39 @@ def main():
                         for achievement in result['new_achievements']:
                             st.success(f"🏅 New Achievement Unlocked: {achievement}")
                     
+                    # Display AI-generated notification if available
+                    if result.get('notification'):
+                        notification = result['notification']
+                        st.success(f"🤖 AI Notification Generated!")
+                        
+                        # Create a nice notification display
+                        ai_icon = notification.get('ai_icon', notification.get('icon', '💙'))
+                        message = notification.get('message', 'Great donation!')
+                        
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            padding: 15px;
+                            border-radius: 10px;
+                            margin: 10px 0;
+                            border-left: 5px solid #FFD700;
+                        ">
+                            <strong>{ai_icon} {message}</strong><br>
+                            <small style="opacity: 0.8;">🧠 Generated by {notification.get('ai_model', 'AI')}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        st.caption(f"💭 Powered by {notification.get('ai_model', 'AI')}")
+                    
+                    # Store notification in session state for display in notifications section
+                    if result.get('notification') and 'recent_notifications' not in st.session_state:
+                        st.session_state.recent_notifications = []
+                    if result.get('notification'):
+                        st.session_state.recent_notifications.insert(0, result['notification'])
+                        # Keep only top 5 notifications
+                        st.session_state.recent_notifications = st.session_state.recent_notifications[:5]
+                    
                     # Display updated stats
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -448,10 +583,14 @@ def main():
                         st.metric("Streak", f"{result.get('new_streak', 0)} days", 
                                 "+1" if result.get('new_streak', 0) > 0 else "Reset")
                     
-                    # Clear relevant caches
-                    for key in ["/users_cache", "/stats_cache"]:
+                    # Clear relevant caches including notifications
+                    for key in ["/users_cache", "/stats_cache", "/notifications_cache"]:
                         if key in st.session_state:
                             del st.session_state[key]
+                    
+                    # Force clear notifications from session state to refresh
+                    if 'notifications_data' in st.session_state:
+                        del st.session_state['notifications_data']
                     
                     # Auto-refresh after showing success message
                     if result['bonus_points'] > 0:

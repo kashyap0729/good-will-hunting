@@ -1,6 +1,29 @@
 """
 Google ADK-style Notification Agent for Goodwill Platform
-Generates encouraging messages for achievements, streaks, and donations using the Gemini API.
+Generates encouraging         try:
+            print("   ⚡ Sending fast request to Gemini AI...")
+            
+            # Configure generation for speed
+            generation_config = {
+                "temperature": 0.7,
+                "top_p": 0.8,
+                "top_k": 40,
+                "max_output_tokens": 100,  # Limit output for faster response
+            }
+            
+            # Generate with faster configuration
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            
+            message = response.text.strip().replace('"', '')
+            print(f"   ✨ AI generated: '{message[:60]}{'...' if len(message) > 60 else ''}'")
+            
+            if not message:
+                raise ValueError("Received empty response from Gemini AI")
+            
+            return messageor achievements, streaks, and donations using the Gemini API.
 """
 
 import os
@@ -19,8 +42,8 @@ load_dotenv(dotenv_path=env_path)
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if not GOOGLE_API_KEY:
-    raise ValueError("GOOGLE_API_KEY not found in .env file. Please create a .env file and add your key.")
+if not GOOGLE_API_KEY or GOOGLE_API_KEY == "your_google_api_key_here":
+    raise ValueError("❌ GOOGLE_API_KEY is required for AI-powered notifications. Please set a valid API key in your .env file.")
 
 genai.configure(api_key=GOOGLE_API_KEY)
 
@@ -41,58 +64,60 @@ class GoogleADKNotificationAgent:
     
     def __init__(self, model_name: str = "gemini-2.0-flash"):
         self.agent_name = "GoodwillEncouragementAgent" 
-        self.version = "3.0.0-google-adk"
+        self.version = "4.0.0-ai-only"
         self.personality = "encouraging, uplifting, and slightly gamified"
         
-        # Initialize the Generative Model with Google ADK
-        self.model = genai.GenerativeModel(model_name)
-        print(f"✅ Google ADK Agent '{self.agent_name}' v{self.version} initialized with '{model_name}'")
+        # Initialize the Generative Model - API key is required
+        try:
+            self.model = genai.GenerativeModel(model_name)
+            print(f"🤖 AI-Powered Notification Agent '{self.agent_name}' v{self.version} initialized with '{model_name}'")
+            print(f"   🧠 Pure AI mode - All notifications powered by Gemini")
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Gemini model: {e}. Check your API key and internet connection.")
 
     def _build_prompt(self, notification_type: NotificationType, context: Dict) -> str:
-        """Constructs a detailed prompt for the Gemini API."""
+        """Constructs a concise prompt for faster Gemini API response."""
         
-        prompt = f"""
-        You are the '{self.agent_name}', an AI agent with an {self.personality} personality.
-        Your task is to generate a single, short, and engaging notification message for a user on the Goodwill donation platform.
-        
-        Guidelines:
-        - The message must be a single, concise sentence.
-        - Use relevant emojis to make it fun and visually appealing.
-        - The tone must be positive and motivational.
-        - Do NOT include any preamble like "Here is your message:" or wrap the message in quotation marks.
-        - Directly address the user's action or status.
+        prompt = f"""Generate a short, encouraging notification for a Goodwill donation platform user.
 
-        ---
-        Notification Request:
-        - Type: {notification_type.value}
-        - Details: {context}
-        ---
-        
-        Based on the request above, generate the perfect notification message.
-        """
+Type: {notification_type.value}
+Context: {context}
+
+Requirements:
+- One sentence only
+- Include relevant emoji
+- Be positive and motivational
+- No quotes or preamble
+
+Generate the message:"""
         return prompt
 
     def _get_message(self, notification_type: NotificationType, context: Dict) -> str:
         """
-        Generates a message using the Gemini API based on type and context.
+        Generates a message using the Gemini AI API based on type and context.
+        Pure AI implementation - no fallbacks.
         """
+        print(f"� Generating AI notification for {notification_type.value}")
         prompt = self._build_prompt(notification_type, context)
         
         try:
+            print("   � Sending request to Gemini AI...")
             response = self.model.generate_content(prompt)
-            # Clean up the response to ensure it's a single line of text
             message = response.text.strip().replace('"', '')
+            print(f"   ✨ AI generated: '{message[:60]}{'...' if len(message) > 60 else ''}'")
+            
             if not message:
-                 raise ValueError("Received an empty response from the API.")
+                raise ValueError("Received empty response from Gemini AI")
+            
             return message
+            
         except Exception as e:
-            print(f"❗️ Gemini API call failed: {e}")
-            # Fallback message in case of API failure
-            return "Thank you for your wonderful contribution! Every bit helps."
+            print(f"   ❌ Gemini AI call failed: {e}")
+            raise RuntimeError(f"AI notification generation failed: {e}")
 
     def generate_notification(self, notification_type: NotificationType, context: Dict = None) -> Dict:
         """
-        Generate a contextual notification message.
+        Generate a contextual notification message using AI.
         """
         context = context or {}
         
@@ -105,41 +130,54 @@ class GoogleADKNotificationAgent:
                 "message": message,
                 "timestamp": datetime.now().isoformat(),
                 "context": context,
-                "personality": self.personality
+                "personality": self.personality,
+                "ai_generated": True,  # 🤖 Mark as AI-generated
+                "ai_model": "gemini-2.0-flash",
+                "ai_version": self.version
             }
             
-            # Add special formatting based on type (this logic remains the same)
+            # Add special formatting based on type with AI indicators
             if notification_type == NotificationType.ACHIEVEMENT:
                 notification["color"] = "gold"
                 notification["icon"] = "🏆"
+                notification["ai_icon"] = "🤖✨"  # AI indicator
                 notification["duration"] = 5000
             elif notification_type == NotificationType.STREAK:
                 notification["color"] = "orange"
                 notification["icon"] = "🔥"
+                notification["ai_icon"] = "🤖🔥"  # AI indicator
                 notification["duration"] = 3000
             elif notification_type == NotificationType.GYM_LEADER:
                 notification["color"] = "purple"
                 notification["icon"] = "👑"
+                notification["ai_icon"] = "🤖👑"  # AI indicator
                 notification["duration"] = 4000
             elif notification_type == NotificationType.MISSING_ITEM:
                 notification["color"] = "red"
                 notification["icon"] = "🚨"
+                notification["ai_icon"] = "🤖🚨"  # AI indicator
                 notification["duration"] = 6000
+            elif notification_type == NotificationType.TIER_UPGRADE:
+                notification["color"] = "purple"
+                notification["icon"] = "🌟"
+                notification["ai_icon"] = "🤖🌟"  # AI indicator
+                notification["duration"] = 5000
+            elif notification_type == NotificationType.DONATION:
+                notification["color"] = "green"
+                notification["icon"] = "🎁"
+                notification["ai_icon"] = "🤖🎁"  # AI indicator
+                notification["duration"] = 4000
             else:
                 notification["color"] = "blue"
                 notification["icon"] = "💙"
+                notification["ai_icon"] = "🤖💙"  # AI indicator
                 notification["duration"] = 3000
             
             return notification
             
         except Exception as e:
-            return {
-                "agent": self.agent_name,
-                "type": "error",
-                "message": "Thank you for your donation! Your kindness makes a difference!",
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e)
-            }
+            # If AI fails, raise error instead of falling back
+            raise RuntimeError(f"Failed to generate AI notification: {e}")
     
     # --- High-level convenience methods (no changes needed here) ---
     def get_encouragement_for_missing_items(self, missing_items: List[Dict]) -> List[Dict]:

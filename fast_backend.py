@@ -20,7 +20,7 @@ import asyncio
 
 # Import our custom modules
 from database import DatabaseManager, get_missing_items, update_gym_leader, process_donation
-from notification_agent import notification_agent, notify_donation, notify_achievement
+from notification_agent import notification_agent, notify_donation, notify_achievement, NotificationType
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)  # Reduced logging for speed
@@ -452,26 +452,111 @@ async def get_platform_stats():
 
 @app.get("/notifications/missing-items")
 async def get_missing_items_notifications():
-    """Get notification messages for missing items (simplified)"""
-    notifications = [
-        {
-            "type": "missing_item",
-            "icon": "🚨",
-            "message": "Winter coats urgently needed at South Beach Donation Hub! +75 bonus points each!"
-        },
-        {
-            "type": "missing_item", 
-            "icon": "🍼",
-            "message": "Baby formula shortage at Wynwood Warehouse! +100 bonus points each!"
-        },
-        {
-            "type": "missing_item",
-            "icon": "🛏️", 
-            "message": "Blankets needed at Coral Gables Vault! Help families stay warm! +50 bonus points each!"
-        }
-    ]
+    """Get AI-powered notification messages for missing items with timeout handling"""
+    try:
+        missing_items = get_missing_items()
+        if missing_items:
+            # Limit to 2 items for faster processing
+            limited_items = missing_items[:2]
+            notifications = []
+            
+            # Generate notifications with timeout
+            import asyncio
+            try:
+                # Use asyncio to add timeout to the synchronous AI calls
+                notifications = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, 
+                        notification_agent.get_encouragement_for_missing_items, 
+                        limited_items
+                    ),
+                    timeout=15.0  # 15 second timeout
+                )
+            except asyncio.TimeoutError:
+                logger.warning("AI notification generation timed out, returning empty list")
+                return []
+            
+            return notifications
+        return []
+    except Exception as e:
+        logger.error(f"Error generating missing items notifications: {e}")
+        return []
+
+@app.get("/notifications/recent-donations")
+async def get_recent_donations_notifications():
+    """Get recent donation notifications with AI-generated messages and timeout handling"""
+    try:
+        conn = pool.get_connection()
+        cursor = conn.cursor()
+        
+        # Get recent donations (last 3 to leave room for missing items in top 5)
+        cursor.execute("""
+            SELECT d.id, d.item_name, d.points_awarded, d.donation_date,
+                   u.username, s.name as storage_name
+            FROM donations d
+            JOIN users u ON d.user_id = u.id
+            JOIN storages s ON d.storage_id = s.id
+            ORDER BY d.donation_date DESC
+            LIMIT 3
+        """)
+        
+        recent_donations = cursor.fetchall()
+        notifications = []
+        
+        # Process each donation with individual timeouts
+        import asyncio
+        for donation in recent_donations:
+            try:
+                context = {
+                    'item_name': donation['item_name'],
+                    'points': donation['points_awarded'],
+                    'username': donation['username'],
+                    'location': donation['storage_name'],
+                    'is_recent': True
+                }
+                
+                # Generate AI notification with timeout
+                notification = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        notification_agent.generate_notification,
+                        NotificationType.DONATION,
+                        context
+                    ),
+                    timeout=8.0  # 8 second timeout per notification
+                )
+                notifications.append(notification)
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout generating notification for {donation['item_name']}")
+                continue  # Skip this notification and continue with others
+            except Exception as e:
+                logger.error(f"Error generating notification for {donation['item_name']}: {e}")
+                continue
+        
+        return notifications
     
-    return notifications
+    except Exception as e:
+        logger.error(f"Error generating recent donation notifications: {e}")
+        return []
+    finally:
+        if 'conn' in locals():
+            pool.return_connection(conn)
+
+@app.get("/notifications/all")
+async def get_all_notifications():
+    """Get all types of notifications combined"""
+    try:
+        missing_items = await get_missing_items_notifications()
+        recent_donations = await get_recent_donations_notifications()
+        
+        # Combine and return top 5 notifications only
+        all_notifications = missing_items + recent_donations
+        return all_notifications[:5]  # Limit to top 5 total notifications
+    
+    except Exception as e:
+        logger.error(f"Error generating all notifications: {e}")
+        return []
 
 # Start cache clearing task
 @app.on_event("startup")
