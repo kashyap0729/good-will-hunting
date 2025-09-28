@@ -311,6 +311,11 @@ class DatabaseManager:
         cursor = conn.cursor()
         
         try:
+            # Debug: Check if we have donations for this storage
+            cursor.execute("SELECT COUNT(*) as count FROM donations WHERE storage_id = ?", (storage_id,))
+            donation_count = cursor.fetchone()['count']
+            print(f"DEBUG: Found {donation_count} donations for storage {storage_id}")
+            
             # Find user with most points from donations at this storage
             cursor.execute("""
                 SELECT 
@@ -327,6 +332,8 @@ class DatabaseManager:
             
             result = cursor.fetchone()
             if result:
+                print(f"DEBUG: New leader should be {result['username']} with {result['total_points']} points")
+                
                 cursor.execute("""
                     UPDATE storages 
                     SET gym_leader_id = ?, gym_leader_points = ?
@@ -334,10 +341,14 @@ class DatabaseManager:
                 """, (result['user_id'], result['total_points'], storage_id))
                 
                 conn.commit()
+                print(f"DEBUG: Updated gym leader for storage {storage_id}: {result['username']} with {result['total_points']} points")
                 logger.info(f"Updated gym leader for storage {storage_id}: {result['username']} with {result['total_points']} points")
                 return result
-            
+            else:
+                print(f"DEBUG: No donations found for storage {storage_id}")
+        
         except Exception as e:
+            print(f"DEBUG: Error updating gym leader: {e}")
             logger.error(f"Error updating gym leader: {e}")
             conn.rollback()
         finally:

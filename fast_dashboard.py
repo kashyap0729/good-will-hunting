@@ -192,7 +192,7 @@ def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1 style='color: white; margin: 0;'>⚡ Fast Goodwill Gym Platform</h1>
+        <h1 style='color: white; margin: 0;'>⚡Goodwill Hunting </h1>
         <p style='color: white; margin: 0; opacity: 0.9;'>
             🏖️ Miami Pokemon Go-style Charitable Gaming • 🏆 Compete • 📦 Donate • 🎯 Win
         </p>
@@ -209,7 +209,7 @@ def main():
     
     # sidebar
     with st.sidebar:
-        st.header("👤 Trainer Profile")
+        st.header("👤 Donor Profile")
         
         # Get cached users
         users_data, error = fast_api_request("/users")
@@ -217,18 +217,18 @@ def main():
         if users_data:
             user_options = {f"🎯 {u['username']} ({u['tier']})": u['id'] 
                           for u in users_data}
-            user_options["➕ Register New Trainer"] = "create_new"
+            user_options["➕ Register New Donor"] = "create_new"
             
             selected_option = st.selectbox(
-                "Select Trainer:", 
+                "Select Donor:", 
                 options=list(user_options.keys()),
                 key="user_selector"
             )
             
-            if selected_option == "➕ Register New Trainer":
+            if selected_option == "➕ Register New Donor":
                 st.subheader("🎮 Quick Registration")
                 with st.form("fast_create_user"):
-                    username = st.text_input("Trainer Name*")
+                    username = st.text_input("Donor Name*")
                     email = st.text_input("Email*") 
                     
                     if st.form_submit_button("🚀 Join Now!", type="primary"):
@@ -264,7 +264,7 @@ def main():
                         st.metric("Streak", f"{user_profile['streak_days']} days")
                         st.metric("Achievements", len(user_profile['achievements']))
         else:
-            st.error("Failed to load trainers")
+            st.error("Failed to load Donor")
             st.stop()
     
     # Main content (optimized for speed)
@@ -278,7 +278,7 @@ def main():
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Trainers", stats_data['total_users'])
+                st.metric("Donor", stats_data['total_users'])
             with col2:
                 st.metric("Donations", stats_data['total_donations'])
             with col3:
@@ -292,7 +292,9 @@ def main():
         st.subheader("🗺️  Gym Locations - Interactive Map")
         st.info("💡 **Red markers** = Occupied by gym leaders | **Green markers** = Available for challenge")
         
-        storages_data, _ = fast_api_request("/storages")
+        
+        #storages_data, _ = fast_api_request("/storages")
+        storages_data, _ = fast_api_request("/storages", use_cache=False) #new add
         
         if storages_data:
             # Create map
@@ -434,7 +436,7 @@ def main():
             
             leaderboard_data, _ = fast_api_request("/leaderboard?limit=5")
             
-            if leaderboard_data:
+            if leaderboard_data and isinstance(leaderboard_data, list):
                 for entry in leaderboard_data:
                     rank_emoji = ["👑", "🥈", "🥉", "4️⃣", "5️⃣"][entry['rank']-1] if entry['rank'] <= 5 else "🏅"
                     
@@ -455,7 +457,11 @@ def main():
             
             if user_profile:
                 # Simple progress chart (faster than complex plotly)
-                st.metric("Your Rank", f"#{next((i for i, u in enumerate(leaderboard_data, 1) if u['user_id'] == current_user_id), 'N/A')}")
+                if leaderboard_data and isinstance(leaderboard_data, list):
+                    user_rank = next((i for i, u in enumerate(leaderboard_data, 1) if u.get('user_id') == current_user_id), 'N/A')
+                    st.metric("Your Rank", f"#{user_rank}")
+                else:
+                    st.metric("Your Rank", "N/A")
                 st.metric("Next Tier", "Coming Soon")
                 
                 # Achievement progress bar

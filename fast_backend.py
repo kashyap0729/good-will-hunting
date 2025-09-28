@@ -279,6 +279,7 @@ async def create_user(user_data: UserCreate):
 @app.post("/donate")
 async def make_donation(donation: DonationCreate, background_tasks: BackgroundTasks):
     """Process a donation (optimized)"""
+    print(f"DEBUG: DONATION STARTED - User {donation.user_id} -> Storage {donation.storage_id}: {donation.item_name}")
     conn = pool.get_connection()
     try:
         # Fast validation
@@ -317,7 +318,18 @@ async def make_donation(donation: DonationCreate, background_tasks: BackgroundTa
         
         conn.commit()
         
-        # Clear caches
+        # Update gym leader for this storage - MUST BE AFTER COMMIT BUT BEFORE POOL RETURN
+        print(f"DEBUG: About to update gym leader for storage {donation.storage_id}")
+        try:
+            update_result = update_gym_leader(donation.storage_id)
+            print(f"DEBUG: Update result: {update_result}")
+            print(f"DEBUG: Successfully updated gym leader for storage {donation.storage_id}")
+        except Exception as gym_error:
+            print(f"DEBUG: ERROR updating gym leader: {gym_error}")
+            logger.error(f"Gym leader update failed: {gym_error}")
+        print(f"DEBUG: Finished gym leader update process for storage {donation.storage_id}")
+        
+        # Clear caches AFTER gym leader update
         get_cached_users.cache_clear()
         get_cached_storages.cache_clear()
         
@@ -335,7 +347,8 @@ async def make_donation(donation: DonationCreate, background_tasks: BackgroundTa
             "bonus_points": bonus_points,
             "missing_item_bonus": is_missing,
             "notification": notification,
-            "tier_upgraded": False  # Simplified for speed
+            "tier_upgraded": False,  # Simplified for speed
+            "gym_leader_updated": bool(update_result) if 'update_result' in locals() else False
         }
         
     except HTTPException:
@@ -346,6 +359,30 @@ async def make_donation(donation: DonationCreate, background_tasks: BackgroundTa
         raise HTTPException(status_code=500, detail="Failed to process donation")
     finally:
         pool.return_connection(conn)
+
+@app.post("/force-update-gym-leaders")
+async def force_update_gym_leaders():
+    """Force update all gym leaders - for debugging"""
+    try:
+        results = []
+        for storage_id in [1, 2, 3, 4, 5, 6]:
+            print(f"DEBUG: Force updating gym leader for storage {storage_id}")
+            result = update_gym_leader(storage_id)
+            if result:
+                results.append({
+                    "storage_id": storage_id,
+                    "leader": result['username'],
+                    "points": result['total_points']
+                })
+        
+        # Clear cache after updates
+        get_cached_storages.cache_clear()
+        
+        return {"updated_leaders": results}
+        
+    except Exception as e:
+        logger.error(f"Error force updating gym leaders: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update gym leaders: {e}")
 
 @app.get("/leaderboard")
 async def get_leaderboard(limit: int = 10):

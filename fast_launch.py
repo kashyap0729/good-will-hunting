@@ -151,9 +151,9 @@ def start_fast_dashboard(streamlit_exe):
     
     try:
         dashboard_process = subprocess.Popen(
-            [streamlit_exe, "run", "fast_dashboard.py", "--server.port", "8501", "--server.headless", "true"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            [streamlit_exe, "run", "fast_dashboard.py", "--server.port", "8501", "--server.headless", "true", "--browser.gatherUsageStats", "false"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
             text=True
         )
         
