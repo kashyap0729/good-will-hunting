@@ -1,4 +1,4 @@
-# 🎮 Fast Goodwill Gym Platform
+# 🎮 Goodwill Hunting
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
@@ -86,7 +86,7 @@ Once launched, access these URLs:
 ### 🚨 **Smart Donation Alerts**
 - **Missing Items System**: Track urgent needs at each gym
 - **Bonus Points**: Extra rewards for high-priority donations
-- **Google ADK-style Notifications**: Achievement celebrations and encouragement
+- **Google ADK Notifications**: Achievement celebrations and encouragement
 
 ### ⚡ **Performance Optimizations**
 - **Sub-20ms API Response Times**: Connection pooling and caching
